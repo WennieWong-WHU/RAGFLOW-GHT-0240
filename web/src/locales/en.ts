@@ -86,8 +86,8 @@ export default {
       title: 'A leading RAG engine for LLM context',
       start: "Let's get started",
       description:
-        'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
-      review: 'from 500+ reviews',
+        '',
+      review: '',
       seeAll: 'See all',
     },
     header: {
