@@ -337,7 +337,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             full_reasoning = ""
             final_answer = None
             final_reference = None
-            in_think = False
+            in_think = bool(dia.prompt_config.get("reasoning", False))
             response = {
                 "id": f"chatcmpl-{chat_id}",
                 "choices": [

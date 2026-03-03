@@ -740,15 +740,19 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
         last_state = None
         think_buf = ""
+        redaction_phase = True
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             last_state = state
             if kind == "marker":
                 if value == "<think>":
                     think_buf = ""
+                    redaction_phase = True
+                else:
+                    redaction_phase = False
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
                 continue
-            if getattr(state, "in_think", False):
+            if redaction_phase or getattr(state, "in_think", False):
                 combined = think_buf + (value or "")
                 redacted = redact_sensitive(combined)
                 delta_out = redacted[len(think_buf):]
