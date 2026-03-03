@@ -47,27 +47,23 @@ def remove_redundant_spaces(txt: str):
 
 
 def clean_markdown_block(text):
-    """
-    Remove Markdown code block syntax from the beginning and end of text.
-
-    This function cleans Markdown code blocks by removing:
-    - Opening ```Markdown tags (with optional whitespace and newlines)
-    - Closing ``` tags (with optional whitespace and newlines)
-
-    Args:
-        text (str): Input text that may be wrapped in Markdown code blocks
-
-    Returns:
-        str: Cleaned text with Markdown code block syntax removed, and stripped of surrounding whitespace
-
-    """
-    # Remove opening ```Markdown tag with optional whitespace and newlines
-    # Matches: optional whitespace + ```markdown + optional whitespace + optional newline
     text = re.sub(r'^\s*```markdown\s*\n?', '', text)
-
-    # Remove closing ``` tag with optional whitespace and newlines
-    # Matches: optional newline + optional whitespace + ``` + optional whitespace at end
     text = re.sub(r'\n?\s*```\s*$', '', text)
-
-    # Return text with surrounding whitespace removed
     return text.strip()
+
+
+def redact_sensitive(text: str) -> str:
+    if not isinstance(text, str) or not text:
+        return text
+    patterns = [
+        re.compile(r'(?i)(("?(?:用户名|用户|账号|帐号|账户|账户名|登录名|管理账号|管理员账号|管理员|超管|username|user|login|account)"?\s*(?:[:=：]|(?:是|为|為))\s*)["\']?)([^"\'\s,;，]+)(["\']?)'),
+        re.compile(r'(?i)(("?(?:秘钥|密钥|密匙|令牌|密码|密碼|pwd|passwd|password)"?\s*(?:[:=：]|(?:是|为|為))\s*)["\']?)([^"\'\s,;，]+)(["\']?)'),
+        re.compile(r'(?i)(("?(?:api[_-]?key|apikey|access[_-]?key|token|access[_-]?token|authorization|secret|访问令牌|访问密钥)"?\s*(?:[:=：]|(?:是|为|為))\s*)["\']?)([^"\'\s,;，]+)(["\']?)'),
+    ]
+    def _mask(m: re.Match) -> str:
+        return m.group(1) + "***" + m.group(4)
+    for p in patterns:
+        text = p.sub(_mask, text)
+    return text
+
+    

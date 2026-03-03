@@ -25,6 +25,7 @@ import logging
 from quart import Response, jsonify, request
 
 from common.token_utils import num_tokens_from_string
+from common.string_utils import redact_sensitive
 
 from agent.canvas import Canvas
 from api.db.db_models import APIToken
@@ -386,8 +387,11 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                         continue
                     token_used += num_tokens_from_string(delta)
                     if in_think:
-                        full_reasoning += delta
-                        response["choices"][0]["delta"]["reasoning_content"] = delta
+                        combined = full_reasoning + delta
+                        new_full = redact_sensitive(combined)
+                        redacted_delta = new_full[len(full_reasoning):]
+                        full_reasoning = new_full
+                        response["choices"][0]["delta"]["reasoning_content"] = redacted_delta
                         response["choices"][0]["delta"]["content"] = None
                     else:
                         full_content += delta
@@ -411,7 +415,6 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     include_metadata=include_reference_metadata,
                     metadata_fields=metadata_fields,
                 )
-                response["choices"][0]["delta"]["final_content"] = final_answer if final_answer is not None else full_content
             yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             yield "data:[DONE]\n\n"
 

@@ -44,7 +44,7 @@ from rag.prompts.generator import chunks_format, citation_prompt, cross_language
     PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
-from common.string_utils import remove_redundant_spaces
+from common.string_utils import remove_redundant_spaces, redact_sensitive
 from common import settings
 
 
@@ -217,12 +217,23 @@ async def async_chat_solo(dialog, messages, stream=True):
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+        think_buf = ""
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             if kind == "marker":
+                if value == "<think>":
+                    think_buf = ""
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
                 continue
-            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
+            if getattr(state, "in_think", False):
+                combined = think_buf + (value or "")
+                redacted = redact_sensitive(combined)
+                delta_out = redacted[len(think_buf):]
+                think_buf = redacted
+                yield {"answer": delta_out, "reference": {}, "audio_binary": tts(tts_mdl, delta_out), "prompt": "", "created_at": time.time(), "final": False}
+            else:
+                cleaned = CITATION_MARKER_PATTERN.sub("", value or "")
+                yield {"answer": cleaned, "reference": {}, "audio_binary": tts(tts_mdl, cleaned), "prompt": "", "created_at": time.time(), "final": False}
     else:
         if llm_type == "chat":
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
@@ -230,7 +241,8 @@ async def async_chat_solo(dialog, messages, stream=True):
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
-        yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
+        _final = CITATION_MARKER_PATTERN.sub("", answer)
+        yield {"answer": _final, "reference": {}, "audio_binary": tts(tts_mdl, _final), "prompt": "", "created_at": time.time()}
 
 
 def get_models(dialog):
@@ -559,7 +571,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             queue = asyncio.Queue()
             async def callback(msg:str):
                 nonlocal queue
-                await queue.put(msg + "<br/>")
+                await queue.put(msg)
 
             await callback("<START_DEEP_RESEARCH>")
             task = asyncio.create_task(reasoner.research(kbinfos, questions[-1], questions[-1], callback=callback))
@@ -571,7 +583,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
                     break
                 else:
-                    yield {"answer": msg, "reference": {}, "audio_binary": None, "final": False}
+                    yield {"answer": redact_sensitive(msg), "reference": {}, "audio_binary": None, "final": False}
 
             await task
 
@@ -712,7 +724,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             langfuse_generation.update(output=langfuse_output)
             langfuse_generation.end()
 
-        return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
+        safe_answer = CITATION_MARKER_PATTERN.sub("", answer)
+        return {"answer": safe_answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
         langfuse_generation = langfuse_tracer.start_generation(
@@ -726,16 +739,27 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
         last_state = None
+        think_buf = ""
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             last_state = state
             if kind == "marker":
+                if value == "<think>":
+                    think_buf = ""
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
                 continue
-            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+            if getattr(state, "in_think", False):
+                combined = think_buf + (value or "")
+                redacted = redact_sensitive(combined)
+                delta_out = redacted[len(think_buf):]
+                think_buf = redacted
+                yield {"answer": delta_out, "reference": {}, "audio_binary": tts(tts_mdl, delta_out), "final": False}
+            else:
+                cleaned = CITATION_MARKER_PATTERN.sub("", value or "")
+                yield {"answer": cleaned, "reference": {}, "audio_binary": tts(tts_mdl, cleaned), "final": False}
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
-            final = decorate_answer(thought + full_answer)
+            final = decorate_answer(full_answer)
             final["final"] = True
             final["audio_binary"] = None
             final["answer"] = ""
@@ -748,7 +772,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = decorate_answer(answer)
-        res["audio_binary"] = tts(tts_mdl, answer)
+        res["audio_binary"] = tts(tts_mdl, res.get("answer", answer))
         yield res
 
     return
@@ -1317,17 +1341,28 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
         refs["chunks"] = chunks_format(refs)
-        return {"answer": answer, "reference": refs}
+        return {"answer": CITATION_MARKER_PATTERN.sub("", answer), "reference": refs}
 
     stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, {"temperature": 0.1})
     last_state = None
+    think_buf = ""
     async for kind, value, state in _stream_with_think_delta(stream_iter):
         last_state = state
         if kind == "marker":
+            if value == "<think>":
+                think_buf = ""
             flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
             yield {"answer": "", "reference": {}, "final": False, **flags}
             continue
-        yield {"answer": value, "reference": {}, "final": False}
+        if getattr(state, "in_think", False):
+            combined = think_buf + (value or "")
+            redacted = redact_sensitive(combined)
+            delta_out = redacted[len(think_buf):]
+            think_buf = redacted
+            yield {"answer": delta_out, "reference": {}, "final": False}
+        else:
+            cleaned = CITATION_MARKER_PATTERN.sub("", value or "")
+            yield {"answer": cleaned, "reference": {}, "final": False}
     full_answer = last_state.full_text if last_state else ""
     final = decorate_answer(full_answer)
     final["final"] = True
