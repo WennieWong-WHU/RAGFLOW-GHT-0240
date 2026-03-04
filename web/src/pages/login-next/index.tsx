@@ -8,9 +8,9 @@ import {
 } from '@/hooks/use-login-request';
 import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import Spotlight from '@/components/spotlight';
 import { Button, ButtonLoading } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import authorizationUtil from '@/utils/authorization-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -71,43 +72,24 @@ function LoginFormContent({
       </div>
       <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
         {!disablePasswordLogin && (
-        <Form {...form}>
-          <form
-            className="flex flex-col gap-8 text-text-primary "
-            data-testid="auth-form"
-            data-active={isActiveFace ? 'true' : undefined}
-            onSubmit={form.handleSubmit(onCheck)}
-          >
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('emailLabel')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      data-testid="auth-email"
-                      placeholder={t('emailPlaceholder')}
-                      autoComplete="email"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {title === 'register' && (
+          <Form {...form}>
+            <form
+              className="flex flex-col gap-8 text-text-primary "
+              data-testid="auth-form"
+              data-active={isActiveFace ? 'true' : undefined}
+              onSubmit={form.handleSubmit(onCheck)}
+            >
               <FormField
                 control={form.control}
-                name="nickname"
+                name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel required>{t('nicknameLabel')}</FormLabel>
+                    <FormLabel required>{t('emailLabel')}</FormLabel>
                     <FormControl>
                       <Input
-                        data-testid="auth-nickname"
-                        placeholder={t('nicknamePlaceholder')}
-                        autoComplete="username"
+                        data-testid="auth-email"
+                        placeholder={t('emailPlaceholder')}
+                        autoComplete="email"
                         {...field}
                       />
                     </FormControl>
@@ -115,73 +97,92 @@ function LoginFormContent({
                   </FormItem>
                 )}
               />
-            )}
-
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('passwordLabel')}</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Input
-                        data-testid="auth-password"
-                        type={'password'}
-                        placeholder={t('passwordPlaceholder')}
-                        autoComplete={
-                          title === 'login'
-                            ? 'current-password'
-                            : 'new-password'
-                        }
-                        {...field}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              {title === 'register' && (
+                <FormField
+                  control={form.control}
+                  name="nickname"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('nicknameLabel')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          data-testid="auth-nickname"
+                          placeholder={t('nicknamePlaceholder')}
+                          autoComplete="username"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               )}
-            />
 
-            {title === 'login' && (
               <FormField
                 control={form.control}
-                name="remember"
+                name="password"
                 render={({ field }) => (
                   <FormItem>
+                    <FormLabel required>{t('passwordLabel')}</FormLabel>
                     <FormControl>
-                      <div className="flex gap-2">
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={(checked) => {
-                            field.onChange(checked);
-                          }}
+                      <div className="relative">
+                        <Input
+                          data-testid="auth-password"
+                          type={'password'}
+                          placeholder={t('passwordPlaceholder')}
+                          autoComplete={
+                            title === 'login'
+                              ? 'current-password'
+                              : 'new-password'
+                          }
+                          {...field}
                         />
-                        <FormLabel
-                          className={cn(' hover:text-text-primary', {
-                            'text-text-disabled': !field.value,
-                            'text-text-primary': field.value,
-                          })}
-                        >
-                          {t('rememberMe')}
-                        </FormLabel>
                       </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            )}
-            <ButtonLoading
-              data-testid="auth-submit"
-              type="submit"
-              loading={loading}
-              className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
-            >
-              {title === 'login' ? t('login') : t('continue')}
-            </ButtonLoading>
-          </form>
-        </Form>
+
+              {title === 'login' && (
+                <FormField
+                  control={form.control}
+                  name="remember"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <div className="flex gap-2">
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={(checked) => {
+                              field.onChange(checked);
+                            }}
+                          />
+                          <FormLabel
+                            className={cn(' hover:text-text-primary', {
+                              'text-text-disabled': !field.value,
+                              'text-text-primary': field.value,
+                            })}
+                          >
+                            {t('rememberMe')}
+                          </FormLabel>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              <ButtonLoading
+                data-testid="auth-submit"
+                type="submit"
+                loading={loading}
+                className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
+              >
+                {title === 'login' ? t('login') : t('continue')}
+              </ButtonLoading>
+            </form>
+          </Form>
         )}
 
         {title === 'login' && channels && channels.length > 0 && (
@@ -246,6 +247,7 @@ function LoginFormContent({
 const Login = () => {
   const [title, setTitle] = useState('login');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login, loading: signLoading } = useLogin();
   const { register, loading: registerLoading } = useRegister();
   const { channels, loading: channelsLoading } = useLoginChannels();
@@ -268,6 +270,8 @@ const Login = () => {
       navigate('/');
     }
   }, [isLogin, navigate]);
+
+  useEffect(() => {}, [searchParams, isLogin]);
 
   const handleLoginWithChannel = async (channel: string) => {
     await loginWithChannel(channel);
@@ -324,7 +328,10 @@ const Login = () => {
           password: rsaPassWord,
         });
         if (code === 0) {
-          navigate('/');
+          localStorage.removeItem('ragflow_auto_login');
+          localStorage.setItem('ragflow_recent_login', String(Date.now()));
+          const token = authorizationUtil.getToken();
+          navigate(token ? `/?auth=${token}` : '/');
         }
       } else {
         const code = await register({
@@ -340,6 +347,30 @@ const Login = () => {
       console.log('Failed:', errorInfo);
     }
   };
+
+  const autoSubmitRef = useRef(false);
+  useEffect(() => {
+    if (autoSubmitRef.current) return;
+    const email = searchParams.get('email');
+    const password = searchParams.get('password');
+    if (email && password) {
+      const marker = `url:${window.location.search}`;
+      const last = localStorage.getItem('ragflow_auto_login');
+      if (last === marker) return;
+      localStorage.setItem('ragflow_auto_login', marker);
+      autoSubmitRef.current = true;
+      setTitle('login');
+      setIsLoginPage(true);
+      form.setValue('email', `${email}`.trim(), { shouldDirty: true });
+      form.setValue('password', password, { shouldDirty: true });
+      setTimeout(() => {
+        const btn = document.querySelector(
+          '[data-testid="auth-submit"]',
+        ) as HTMLButtonElement | null;
+        btn?.click();
+      }, 100);
+    }
+  }, [searchParams]);
 
   return (
     <>

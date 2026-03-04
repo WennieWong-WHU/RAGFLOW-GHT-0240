@@ -113,8 +113,14 @@ request.interceptors.response.use(
         description: data?.message,
         duration: 3,
       });
-      authorizationUtil.removeAll();
-      redirectToLogin();
+      const pathname = window.location.pathname;
+      const isLoginPage = pathname === '/login' || pathname === '/login-next';
+      const recent = Number(localStorage.getItem('ragflow_recent_login') || 0);
+      const inGrace = recent && Date.now() - recent < 3000;
+      if (!isLoginPage && !inGrace) {
+        authorizationUtil.removeAll();
+        redirectToLogin();
+      }
     } else if (data?.code !== 0) {
       notification.error({
         message: `${i18n.t('message.hint')} : ${data?.code}`,

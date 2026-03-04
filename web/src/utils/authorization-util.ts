@@ -54,10 +54,16 @@ export const getAuthorization = () => {
   }
 
   const auth = getSearchValue('auth');
-  const authorization = auth
-    ? 'Bearer ' + auth
-    : storage.getAuthorization() || '';
+  if (auth) {
+    return 'Bearer ' + auth;
+  }
 
+  const header = storage.getAuthorization();
+  const token = storage.getToken();
+  const headerVal = header && header !== 'null' ? header : '';
+  const tokenVal = token && token !== 'null' ? token : '';
+
+  const authorization = headerVal || (tokenVal ? 'Bearer ' + tokenVal : '');
   return authorization;
 };
 
